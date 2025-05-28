@@ -12,7 +12,7 @@ mapping_df = pd.read_csv("advisor_student_mapping.csv")
 # Features
 features = ["attendance_rate", "gpa", "assignment_completion", "lms_activity"]
 
-# --- Step 1: Generate synthetic risk labels (you can customize this logic) ---
+# --- Step 1: Generate synthetic risk labels ---
 def generate_risk(row):
     score = (row["attendance_rate"] * 0.3 +
              row["gpa"] * 25 +
@@ -46,9 +46,14 @@ y_pred = model.predict(X_test)
 accuracy = accuracy_score(y_test, y_pred)
 
 # --- Step 3: Streamlit UI ---
+st.set_page_config(page_title="Student Risk Predictor", layout="wide")
 st.title("🎓 Student Risk Prediction Dashboard")
-st.markdown(f"**🧮 Model Accuracy (based on generated risk levels):** `{accuracy * 100:.2f}%`")
 
+# ✅ Display model accuracy at the top
+st.markdown("## ✅ Model Accuracy")
+st.success(f"The model accuracy based on synthetic risk levels is **{accuracy * 100:.2f}%**")
+
+# --- Role and ID Input ---
 role = st.selectbox("Select your role:", ["advisor", "chair"])
 user_id = st.text_input(f"Enter your {role} ID:")
 
