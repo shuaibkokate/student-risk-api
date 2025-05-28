@@ -5,14 +5,14 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
 
-# Load data
+# Load datasets
 student_df = pd.read_csv("student_risk_predictions.csv")
 mapping_df = pd.read_csv("advisor_student_mapping.csv")
 
-# Features
+# Define feature columns
 features = ["attendance_rate", "gpa", "assignment_completion", "lms_activity"]
 
-# --- Step 1: Generate synthetic risk labels ---
+# --- Step 1: Derive Risk Level (if not already present or to simulate it) ---
 def generate_risk(row):
     score = (row["attendance_rate"] * 0.3 +
              row["gpa"] * 25 +
@@ -25,19 +25,18 @@ def generate_risk(row):
     else:
         return "High"
 
-student_df["risk_level"] = student_df.apply(generate_risk, axis=1)
-
-# --- Step 2: Train model using synthetic labels ---
-X = student_df[features]
-y = student_df["risk_level"]
+# Apply only if risk_level is missing
+if "risk_level" not in student_df.columns or student_df["risk_level"].isnull().any():
+    student_df["risk_level"] = student_df.apply(generate_risk, axis=1)
 
 # Encode labels
-label_mapping = {"Low": 0, "Medium": 1, "High": 2}
-label_inverse = {v: k for k, v in label_mapping.items()}
-y_encoded = y.map(label_mapping)
+label_map = {"Low": 0, "Medium": 1, "High": 2}
+inverse_label_map = {v: k for k, v in label_map.items()}
+y = student_df["risk_level"].map(label_map)
+X = student_df[features]
 
-# Split and train
-X_train, X_test, y_train, y_test = train_test_split(X, y_encoded, test_size=0.2, random_state=42)
+# Train/test split and model training
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 model = RandomForestClassifier(n_estimators=100, random_state=42)
 model.fit(X_train, y_train)
 
@@ -45,15 +44,15 @@ model.fit(X_train, y_train)
 y_pred = model.predict(X_test)
 accuracy = accuracy_score(y_test, y_pred)
 
-# --- Step 3: Streamlit UI ---
+# --- Streamlit UI ---
 st.set_page_config(page_title="Student Risk Predictor", layout="wide")
 st.title("🎓 Student Risk Prediction Dashboard")
 
-# ✅ Display model accuracy at the top
-st.markdown("## ✅ Model Accuracy")
-st.success(f"The model accuracy based on synthetic risk levels is **{accuracy * 100:.2f}%**")
+# ✅ Display model accuracy
+st.markdown("### ✅ Model Accuracy (based on internal test data)")
+st.metric(label="Accuracy", value=f"{accuracy * 100:.2f}%", delta=None)
 
-# --- Role and ID Input ---
+# --- Role & Access Control ---
 role = st.selectbox("Select your role:", ["advisor", "chair"])
 user_id = st.text_input(f"Enter your {role} ID:")
 
@@ -68,7 +67,7 @@ if user_id:
     if not filtered_df.empty:
         X_filtered = filtered_df[features]
         predicted_risk = model.predict(X_filtered)
-        filtered_df["Predicted Risk"] = [label_inverse[i] for i in predicted_risk]
+        filtered_df["Predicted Risk"] = [inverse_label_map[p] for p in predicted_risk]
 
         st.subheader("📊 Predicted Risk for Assigned Students")
         st.dataframe(filtered_df[["student_id"] + features + ["Predicted Risk"]])
