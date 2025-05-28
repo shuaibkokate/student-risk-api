@@ -4,8 +4,9 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import LabelEncoder
 
 # Load data
-student_df = pd.read_csv("student_risk_predictions.csv")
-mapping_df = pd.read_csv("advisor_student_mapping.csv")
+student_df = pd.read_csv("app/student_risk_predictions.csv")
+mapping_df = pd.read_csv("app/advisor_student_mapping.csv")
+
 
 # Prepare model and encoder
 features = ["attendance_rate", "gpa", "assignment_completion", "lms_activity"]
