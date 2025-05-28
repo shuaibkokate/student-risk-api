@@ -1,47 +1,53 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
 
-# Load student and mapping CSVs
-student_df = pd.read_csv("app/student_risk_predictions.csv")
-mapping_df = pd.read_csv("app/advisor_student_mapping.csv")
+# Load data
+student_df = pd.read_csv("student_risk_predictions.csv")
+mapping_df = pd.read_csv("advisor_student_mapping.csv")
 
-# --- Step 1: Training dataset (mock or real labeled)
-train_data = pd.DataFrame({
-    "attendance_rate": [95, 60, 85, 50, 70, 78, 90, 55, 40, 88],
-    "gpa": [3.9, 2.1, 3.2, 1.9, 2.8, 3.0, 3.5, 2.3, 1.8, 3.4],
-    "assignment_completion": [100, 50, 90, 40, 60, 70, 95, 45, 35, 88],
-    "lms_activity": [95, 40, 75, 30, 50, 60, 90, 38, 28, 82],
-    "risk_level": ["low", "high", "medium", "high", "medium", "medium", "low", "high", "high", "low"]
-})
-
+# Features
 features = ["attendance_rate", "gpa", "assignment_completion", "lms_activity"]
-X = train_data[features]
-y = train_data["risk_level"]
 
-# Encode target
-le = LabelEncoder()
-y_encoded = le.fit_transform(y)
+# --- Step 1: Generate synthetic risk labels (you can customize this logic) ---
+def generate_risk(row):
+    score = (row["attendance_rate"] * 0.3 +
+             row["gpa"] * 25 +
+             row["assignment_completion"] * 0.2 +
+             row["lms_activity"] * 0.3)
+    if score >= 200:
+        return "Low"
+    elif score >= 140:
+        return "Medium"
+    else:
+        return "High"
 
-# --- Step 2: Train-test split
+student_df["risk_level"] = student_df.apply(generate_risk, axis=1)
+
+# --- Step 2: Train model using synthetic labels ---
+X = student_df[features]
+y = student_df["risk_level"]
+
+# Encode labels
+label_mapping = {"Low": 0, "Medium": 1, "High": 2}
+label_inverse = {v: k for k, v in label_mapping.items()}
+y_encoded = y.map(label_mapping)
+
+# Split and train
 X_train, X_test, y_train, y_test = train_test_split(X, y_encoded, test_size=0.2, random_state=42)
-
-# Train model
 model = RandomForestClassifier(n_estimators=100, random_state=42)
 model.fit(X_train, y_train)
 
-# --- Step 3: Evaluate model
+# Accuracy
 y_pred = model.predict(X_test)
 accuracy = accuracy_score(y_test, y_pred)
 
-# --- Streamlit UI ---
-st.set_page_config(page_title="Student Risk Prediction", layout="wide")
+# --- Step 3: Streamlit UI ---
 st.title("🎓 Student Risk Prediction Dashboard")
-
-st.markdown(f"📈 **Model Accuracy:** `{accuracy * 100:.2f}%`")
+st.markdown(f"**🧮 Model Accuracy (based on generated risk levels):** `{accuracy * 100:.2f}%`")
 
 role = st.selectbox("Select your role:", ["advisor", "chair"])
 user_id = st.text_input(f"Enter your {role} ID:")
@@ -56,9 +62,8 @@ if user_id:
 
     if not filtered_df.empty:
         X_filtered = filtered_df[features]
-        risk_predictions = model.predict(X_filtered)
-        filtered_df = filtered_df.copy()
-        filtered_df["Predicted Risk"] = le.inverse_transform(risk_predictions)
+        predicted_risk = model.predict(X_filtered)
+        filtered_df["Predicted Risk"] = [label_inverse[i] for i in predicted_risk]
 
         st.subheader("📊 Predicted Risk for Assigned Students")
         st.dataframe(filtered_df[["student_id"] + features + ["Predicted Risk"]])
