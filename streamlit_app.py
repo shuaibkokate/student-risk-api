@@ -1,59 +1,82 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import LabelEncoder
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
 
-# Load CSVs
-student_df = pd.read_csv("app/student_risk_predictions.csv")
-mapping_df = pd.read_csv("app/advisor_student_mapping.csv")
-
-# Features used for prediction
-features = ["attendance_rate", "gpa", "assignment_completion", "lms_activity"]
-
-# Generate sample training data (mocked with known labels)
-# In production, replace with actual labeled training data
-train_data = pd.DataFrame({
-    "attendance_rate": [95, 60, 85, 50, 70],
-    "gpa": [3.9, 2.1, 3.2, 1.9, 2.8],
-    "assignment_completion": [100, 50, 90, 40, 60],
-    "lms_activity": [95, 40, 75, 30, 50],
-    "risk_level": ["low", "high", "medium", "high", "medium"]
-})
-
-# Prepare training data
-X_train = train_data[features]
-y_train = train_data["risk_level"]
-le = LabelEncoder()
-y_encoded = le.fit_transform(y_train)
-
-# Train model
-model = RandomForestClassifier(n_estimators=100, random_state=42)
-model.fit(X_train, y_encoded)
-
-# Streamlit UI
-st.set_page_config(page_title="Student Risk Prediction", layout="wide")
+# Streamlit UI Config
+st.set_page_config(page_title="Student Risk Predictor", layout="wide")
 st.title("🎓 Student Risk Prediction Dashboard")
 
-role = st.selectbox("Select your role:", ["advisor", "chair"])
-user_id = st.text_input(f"Enter your {role} ID:")
+try:
+    # Load datasets
+    student_df = pd.read_csv("student_risk_predictions.csv")
+    mapping_df = pd.read_csv("advisor_student_mapping.csv")
 
-if user_id:
-    # Get students for advisor/chair
-    if role == "advisor":
-        allowed_students = mapping_df[mapping_df["advisor_id"] == user_id]["student_id"].tolist()
-    else:
-        allowed_students = mapping_df[mapping_df["program_chair_id"] == user_id]["student_id"].tolist()
+    # Define feature columns
+    features = ["attendance_rate", "gpa", "assignment_completion", "lms_activity"]
 
-    filtered_df = student_df[student_df["student_id"].isin(allowed_students)]
+    # --- Step 1: Derive Risk Level if missing ---
+    def generate_risk(row):
+        score = (
+            row["attendance_rate"] * 0.3 +
+            row["gpa"] * 25 +
+            row["assignment_completion"] * 0.2 +
+            row["lms_activity"] * 0.3
+        )
+        if score >= 200:
+            return "Low"
+        elif score >= 140:
+            return "Medium"
+        else:
+            return "High"
 
-    if not filtered_df.empty:
-        # Predict risk level
-        X_filtered = filtered_df[features]
-        risk_predictions = model.predict(X_filtered)
-        filtered_df = filtered_df.copy()
-        filtered_df["Predicted Risk"] = le.inverse_transform(risk_predictions)
+    if "risk_level" not in student_df.columns or student_df["risk_level"].isnull().any():
+        student_df["risk_level"] = student_df.apply(generate_risk, axis=1)
 
-        st.subheader("📊 Predicted Risk for Assigned Students")
-        st.dataframe(filtered_df[["student_id"] + features + ["Predicted Risk"]])
-    else:
-        st.warning("No students found for this user ID.")
+    # Encode labels
+    label_map = {"Low": 0, "Medium": 1, "High": 2}
+    inverse_label_map = {v: k for k, v in label_map.items()}
+    y = student_df["risk_level"].map(label_map)
+    X = student_df[features]
+
+    # Train/test split and model training
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    model.fit(X_train, y_train)
+
+    # Accuracy
+    y_pred = model.predict(X_test)
+    accuracy = accuracy_score(y_test, y_pred)
+
+    # ✅ Display model accuracy
+    st.markdown("### ✅ Model Accuracy (based on internal test data)")
+    st.metric(label="Accuracy", value=f"{accuracy * 100:.2f}%", delta=None)
+
+    # --- Role & Access Control ---
+    role = st.selectbox("Select your role:", ["advisor", "chair"])
+    user_id = st.text_input(f"Enter your {role} ID:")
+
+    if user_id:
+        if role == "advisor":
+            allowed_students = mapping_df[mapping_df["advisor_id"] == user_id]["student_id"].tolist()
+        else:
+            allowed_students = mapping_df[mapping_df["program_chair_id"] == user_id]["student_id"].tolist()
+
+        filtered_df = student_df[student_df["student_id"].isin(allowed_students)]
+
+        if not filtered_df.empty:
+            X_filtered = filtered_df[features]
+            predicted_risk = model.predict(X_filtered)
+            filtered_df["Predicted Risk"] = [inverse_label_map[p] for p in predicted_risk]
+
+            st.subheader("📊 Predicted Risk for Assigned Students")
+            st.dataframe(filtered_df[["student_id"] + features + ["Predicted Risk"]])
+        else:
+            st.warning("No students found for this user ID.")
+
+except FileNotFoundError as e:
+    st.error(f"❌ File not found: {e.filename}")
+except Exception as e:
+    st.error(f"❌ An unexpected error occurred:\n{e}")
